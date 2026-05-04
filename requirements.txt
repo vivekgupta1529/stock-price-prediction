@@ -1,6 +1,11 @@
 streamlit
 pandas==2.2.2
 numpy
+<<<<<<< HEAD
 scikit-learn
 plotly
 yahooquery
+=======
+yahooquery
+requests
+>>>>>>> a27377b (added smart search + timeframe + UI update)

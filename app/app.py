@@ -1,104 +1,170 @@
 import streamlit as st
 import pandas as pd
-import os
-import pickle
 import numpy as np
-import plotly.graph_objects as go
 from yahooquery import Ticker
+import requests
 
-st.set_page_config(page_title="Pro Stock Predictor", layout="wide")
+# ------------------ PAGE CONFIG ------------------
+st.set_page_config(page_title="Vivek's Trading Dashboard", layout="wide")
 
-# Load model
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-MODEL_PATH = os.path.join(BASE_DIR, "..", "model", "model.pkl")
+# ------------------ TITLE ------------------
+st.title("📈 Smart Trading Dashboard")
+st.markdown("### 👨‍💻 Developed by Vivek Gupta")
 
-with open(MODEL_PATH, "rb") as f:
-    model = pickle.load(f)
+# ------------------ SIDEBAR ------------------
+st.sidebar.header("⚙ Settings")
 
-# Sidebar
-st.sidebar.title("⚙️ Settings")
-stock = st.sidebar.text_input("Stock Symbol", "TCS.NS")
-period = st.sidebar.selectbox("Time Period", ["6mo", "1y", "2y"])
+user_input = st.sidebar.text_input("🔍 Search Stock", "")
+search_clicked = st.sidebar.button("🔍 Search")
+
+timeframe = st.sidebar.selectbox("⏱ Timeframe", [
+    "1m", "5m", "15m", "30m",
+    "1h", "2h", "4h",
+    "1d", "7d", "1mo", "3mo", "6mo", "1y"
+])
+
 show_ema = st.sidebar.checkbox("Show EMA (20)", True)
 
-st.title("📈 Pro Stock Price Prediction Dashboard")
+st.sidebar.markdown("---")
+st.sidebar.markdown("### 👨‍💻 Vivek Gupta")
+st.sidebar.markdown("🚀 Data Science Project")
 
-# ---------------- DATA FETCH ----------------
-try:
-    ticker = Ticker(stock)
-    data = ticker.history(period=period)
+# ------------------ SMART SEARCH ------------------
+def smart_search(query):
+    try:
+        url = f"https://query2.finance.yahoo.com/v1/finance/search?q={query}"
+        headers = {"User-Agent": "Mozilla/5.0"}
+        res = requests.get(url, headers=headers)
+        data = res.json()
 
-    if data.empty:
-        st.error("❌ No data found")
-        st.stop()
+        quotes = data.get("quotes", [])
 
-    # 🔥 MultiIndex fix
-    if isinstance(data.index, pd.MultiIndex):
-        data = data.xs(stock)
+        for q in quotes:
+            if q.get("exchange") == "NSI":
+                return q.get("symbol")
 
-    data = data.reset_index()
+        if quotes:
+            return quotes[0].get("symbol")
 
-    data = data[['date', 'open', 'high', 'low', 'close', 'volume']]
-    data.columns = ['Date', 'Open', 'High', 'Low', 'Close', 'Volume']
-    data.set_index('Date', inplace=True)
+        return None
 
-except Exception as e:
-    st.error("❌ Data fetch error")
-    st.write(e)
-    st.stop()
+    except:
+        return None
 
-# ---------------- INDICATORS ----------------
-data["MA50"] = data["Close"].rolling(50).mean()
-data["MA200"] = data["Close"].rolling(200).mean()
-data["EMA20"] = data["Close"].ewm(span=20).mean()
+# ------------------ TIMEFRAME LOGIC ------------------
+def get_interval_period(tf):
+    if tf == "1m":
+        return "1m", "5d"
+    elif tf == "5m":
+        return "5m", "5d"
+    elif tf == "15m":
+        return "15m", "1mo"
+    elif tf == "30m":
+        return "30m", "1mo"
+    elif tf == "1h":
+        return "1h", "3mo"
+    elif tf == "2h":
+        return "1h", "3mo"
+    elif tf == "4h":
+        return "1h", "6mo"
+    elif tf == "1d":
+        return "1d", "1y"
+    elif tf == "7d":
+        return "1d", "5y"
+    elif tf == "1mo":
+        return "1mo", "10y"
+    elif tf == "3mo":
+        return "1mo", "10y"
+    elif tf == "6mo":
+        return "1mo", "10y"
+    elif tf == "1y":
+        return "1mo", "max"
 
-delta = data["Close"].diff()
-gain = (delta.where(delta > 0, 0)).rolling(14).mean()
-loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-rs = gain / loss
-data["RSI"] = 100 - (100 / (1 + rs))
+# ------------------ LOAD DATA ------------------
+def load_data(symbol, timeframe):
+    try:
+        interval, period = get_interval_period(timeframe)
 
-# ---------------- CHART ----------------
-fig = go.Figure()
+        ticker = Ticker(symbol)
+        df = ticker.history(interval=interval, period=period)
 
-fig.add_trace(go.Candlestick(
-    x=data.index,
-    open=data["Open"],
-    high=data["High"],
-    low=data["Low"],
-    close=data["Close"]
-))
+        if df is None or df.empty:
+            return None
 
-fig.add_trace(go.Scatter(x=data.index, y=data["MA50"], name="MA50"))
-fig.add_trace(go.Scatter(x=data.index, y=data["MA200"], name="MA200"))
+        if isinstance(df.index, pd.MultiIndex):
+            df = df.xs(symbol)
 
-if show_ema:
-    fig.add_trace(go.Scatter(x=data.index, y=data["EMA20"], name="EMA20"))
+        df = df.reset_index()
+        return df
 
-st.plotly_chart(fig, use_container_width=True)
+    except:
+        return None
 
-# RSI
-st.subheader("RSI")
-st.line_chart(data["RSI"])
+# ------------------ INDICATORS ------------------
+def add_indicators(df):
+    df["MA50"] = df["close"].rolling(50).mean()
+    df["MA200"] = df["close"].rolling(200).mean()
+    df["EMA20"] = df["close"].ewm(span=20).mean()
 
-# ---------------- SIGNAL ----------------
-st.subheader("Signal")
+    delta = df["close"].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+    rs = gain / loss
+    df["RSI"] = 100 - (100 / (1 + rs))
 
-rsi = data["RSI"].iloc[-1]
+    return df
 
-if data["MA50"].iloc[-1] > data["MA200"].iloc[-1] and rsi < 70:
-    st.success("🟢 BUY")
-elif data["MA50"].iloc[-1] < data["MA200"].iloc[-1] and rsi > 30:
-    st.error("🔴 SELL")
-else:
-    st.warning("🟡 HOLD")
+# ------------------ SIGNAL ------------------
+def get_signal(df):
+    latest = df.iloc[-1]
+    rsi = latest["RSI"]
 
-# ---------------- PREDICTION ----------------
-last_price = data[["Close"]].iloc[-1:]
-prediction = model.predict(last_price)
+    if latest["EMA20"] > latest["MA50"] and rsi < 70:
+        return "🟢 BUY"
+    elif latest["EMA20"] < latest["MA50"] and rsi > 30:
+        return "🔴 SELL"
+    else:
+        return "🟡 HOLD"
 
-st.metric("Prediction", f"₹ {prediction[0]:.2f}")
+# ------------------ MAIN ------------------
+if not user_input:
+    st.info("👆 Enter a stock name in sidebar and click Search (e.g. SUZLON, SAIL, TCS)")
 
-# ---------------- DATA ----------------
-st.subheader("Recent Data")
-st.dataframe(data.tail())
+elif search_clicked:
+    symbol = smart_search(user_input)
+
+    if symbol is None:
+        st.error("❌ Stock not found")
+    else:
+        st.success(f"🔍 Found: {symbol}")
+
+        data = load_data(symbol, timeframe)
+
+        if data is None:
+            st.error("❌ No data available")
+        else:
+            data = add_indicators(data)
+
+            price = data["close"].iloc[-1]
+            st.subheader(f"💰 Price: ₹ {round(price, 2)}")
+
+            signal = get_signal(data)
+            st.subheader("📊 Signal")
+            st.markdown(f"### {signal}")
+
+            chart_data = data[["close", "MA50", "MA200"]].dropna()
+
+            if show_ema:
+                chart_data["EMA20"] = data["EMA20"]
+
+            st.line_chart(chart_data)
+
+            st.subheader("📉 RSI")
+            st.line_chart(data["RSI"])
+
+            with st.expander("📄 Data"):
+                st.write(data.tail())
+
+# ------------------ FOOTER ------------------
+st.markdown("---")
+st.markdown("Made with ❤️ by **Vivek Gupta**")
