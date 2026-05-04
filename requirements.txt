@@ -1,5 +1,7 @@
-streamlit
-pandas==2.2.2
+streamlit==1.57.0
+pandas==3.0.2
 numpy
+scikit-learn
+yfinance
 yahooquery
-requests
+plotly
