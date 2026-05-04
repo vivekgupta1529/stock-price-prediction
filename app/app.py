@@ -3,19 +3,26 @@ import pandas as pd
 import numpy as np
 from yahooquery import Ticker
 import requests
+import plotly.graph_objects as go
 
 # ------------------ PAGE CONFIG ------------------
 st.set_page_config(page_title="Vivek's Trading Dashboard", layout="wide")
 
 # ------------------ TITLE ------------------
-st.title("📈 Smart Trading Dashboard")
+st.markdown("<h2>📈 Smart Trading Dashboard</h2>", unsafe_allow_html=True)
 st.markdown("### 👨‍💻 Developed by Vivek Gupta")
 
-# ------------------ SIDEBAR ------------------
-st.sidebar.header("⚙ Settings")
+# ------------------ SEARCH (TOP - NOT SIDEBAR) ------------------
+col1, col2 = st.columns([3, 1])
 
-user_input = st.sidebar.text_input("🔍 Search Stock", "")
-search_clicked = st.sidebar.button("🔍 Search")
+with col1:
+    user_input = st.text_input("🔍 Search Stock (e.g. SUZLON, TCS, INFY)", "")
+
+with col2:
+    search_clicked = st.button("Search")
+
+# ------------------ SIDEBAR ------------------
+st.sidebar.markdown("## ⚙ Settings")
 
 timeframe = st.sidebar.selectbox("⏱ Timeframe", [
     "1m", "5m", "15m", "30m",
@@ -24,10 +31,6 @@ timeframe = st.sidebar.selectbox("⏱ Timeframe", [
 ])
 
 show_ema = st.sidebar.checkbox("Show EMA (20)", True)
-
-st.sidebar.markdown("---")
-st.sidebar.markdown("### 👨‍💻 Vivek Gupta")
-st.sidebar.markdown("🚀 Data Science Project")
 
 # ------------------ SMART SEARCH ------------------
 def smart_search(query):
@@ -47,38 +50,27 @@ def smart_search(query):
             return quotes[0].get("symbol")
 
         return None
-
     except:
         return None
 
 # ------------------ TIMEFRAME LOGIC ------------------
 def get_interval_period(tf):
-    if tf == "1m":
-        return "1m", "5d"
-    elif tf == "5m":
-        return "5m", "5d"
-    elif tf == "15m":
-        return "15m", "1mo"
-    elif tf == "30m":
-        return "30m", "1mo"
-    elif tf == "1h":
-        return "1h", "3mo"
-    elif tf == "2h":
-        return "1h", "3mo"
-    elif tf == "4h":
-        return "1h", "6mo"
-    elif tf == "1d":
-        return "1d", "1y"
-    elif tf == "7d":
-        return "1d", "5y"
-    elif tf == "1mo":
-        return "1mo", "10y"
-    elif tf == "3mo":
-        return "1mo", "10y"
-    elif tf == "6mo":
-        return "1mo", "10y"
-    elif tf == "1y":
-        return "1mo", "max"
+    mapping = {
+        "1m": ("1m", "5d"),
+        "5m": ("5m", "5d"),
+        "15m": ("15m", "1mo"),
+        "30m": ("30m", "1mo"),
+        "1h": ("1h", "3mo"),
+        "2h": ("1h", "3mo"),
+        "4h": ("1h", "6mo"),
+        "1d": ("1d", "1y"),
+        "7d": ("1d", "5y"),
+        "1mo": ("1mo", "10y"),
+        "3mo": ("1mo", "10y"),
+        "6mo": ("1mo", "10y"),
+        "1y": ("1mo", "max"),
+    }
+    return mapping.get(tf, ("1d", "1y"))
 
 # ------------------ LOAD DATA ------------------
 def load_data(symbol, timeframe):
@@ -96,7 +88,6 @@ def load_data(symbol, timeframe):
 
         df = df.reset_index()
         return df
-
     except:
         return None
 
@@ -128,7 +119,7 @@ def get_signal(df):
 
 # ------------------ MAIN ------------------
 if not user_input:
-    st.info("👆 Enter a stock name in sidebar and click Search (e.g. SUZLON, SAIL, TCS)")
+    st.info("👆 Enter stock name above (e.g. SUZLON, TCS, INFY)")
 
 elif search_clicked:
     symbol = smart_search(user_input)
@@ -152,18 +143,41 @@ elif search_clicked:
             st.subheader("📊 Signal")
             st.markdown(f"### {signal}")
 
-            chart_data = data[["close", "MA50", "MA200"]].dropna()
+            # ------------------ PRO GRAPH ------------------
+            fig = go.Figure()
+
+            fig.add_trace(go.Scatter(
+                x=data["date"],
+                y=data["close"],
+                name="Price",
+                line=dict(width=3)
+            ))
+
+            fig.add_trace(go.Scatter(
+                x=data["date"],
+                y=data["MA50"],
+                name="MA50"
+            ))
 
             if show_ema:
-                chart_data["EMA20"] = data["EMA20"]
+                fig.add_trace(go.Scatter(
+                    x=data["date"],
+                    y=data["EMA20"],
+                    name="EMA20",
+                    line=dict(dash="dot")
+                ))
 
-            st.line_chart(chart_data)
+            fig.update_layout(
+                height=550,
+                template="plotly_dark",
+                hovermode="x unified"
+            )
 
+            st.plotly_chart(fig, use_container_width=True)
+
+            # RSI
             st.subheader("📉 RSI")
             st.line_chart(data["RSI"])
-
-            with st.expander("📄 Data"):
-                st.write(data.tail())
 
 # ------------------ FOOTER ------------------
 st.markdown("---")
