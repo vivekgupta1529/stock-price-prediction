@@ -1,6 +1,6 @@
-streamlit
-pandas
-numpy
-yahooquery
-requests
-plotly
+streamlit>=1.32.0
+pandas>=2.0.0
+numpy>=1.26.0
+yahooquery>=2.3.7
+requests>=2.31.0
+plotly>=5.20.0
