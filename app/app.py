@@ -652,6 +652,83 @@ else:
             return f"{label}: {pct:.0f}% {tag}"
         week_str  = vol_spike(vol_cur, vol_week,  "1W")
         month_str = vol_spike(vol_cur, vol_month, "1M")
+
+        # ── Institutional / Fake Move Analysis ───────────────
+        def analyse_move(df, cur_vol, month_avg):
+            last5       = df.tail(5)
+            price_moves = last5["close"].diff().dropna()
+            vol_moves   = last5["volume"].diff().dropna()
+
+            # 1. Is volume rising with price? (confirmation)
+            up_candles_confirmed   = sum(1 for p, v in zip(price_moves, vol_moves) if p > 0 and v > 0)
+            down_candles_confirmed = sum(1 for p, v in zip(price_moves, vol_moves) if p < 0 and v > 0)
+
+            # 2. Current candle: is volume above monthly average?
+            vol_ratio = cur_vol / month_avg if month_avg > 0 else 0
+
+            # 3. Price direction of last candle
+            last_price_chg = df["close"].iloc[-1] - df["close"].iloc[-2]
+            last_vol_chg   = df["volume"].iloc[-1] - df["volume"].iloc[-2]
+
+            # 4. Determine verdict
+            if vol_ratio >= 1.5 and last_price_chg > 0 and last_vol_chg > 0:
+                verdict   = "🏦 Institutional BUY"
+                detail    = "High volume + rising price. Strong institutional accumulation."
+                color     = "#26a69a"
+                icon      = "🟢"
+            elif vol_ratio >= 1.5 and last_price_chg < 0 and last_vol_chg > 0:
+                verdict   = "🏦 Institutional SELL"
+                detail    = "High volume + falling price. Institutions distributing/exiting."
+                color     = "#ef5350"
+                icon      = "🔴"
+            elif vol_ratio < 0.7 and abs(last_price_chg) > 0:
+                verdict   = "⚠️ Fake Move"
+                detail    = "Price moving on LOW volume. Likely retail trap — no institutional backing."
+                color     = "#f59e0b"
+                icon      = "🟡"
+            elif up_candles_confirmed >= 3 and last_price_chg > 0:
+                verdict   = "✅ Real Breakout"
+                detail    = f"Volume confirmed {up_candles_confirmed}/4 up candles. Genuine buying momentum."
+                color     = "#26a69a"
+                icon      = "🟢"
+            elif down_candles_confirmed >= 3 and last_price_chg < 0:
+                verdict   = "✅ Real Breakdown"
+                detail    = f"Volume confirmed {down_candles_confirmed}/4 down candles. Genuine selling pressure."
+                color     = "#ef5350"
+                icon      = "🔴"
+            elif vol_ratio >= 1.0 and last_price_chg > 0:
+                verdict   = "📈 Buying Pressure"
+                detail    = "Volume slightly above avg with price rise. Moderate institutional interest."
+                color     = "#38bdf8"
+                icon      = "🔵"
+            elif vol_ratio >= 1.0 and last_price_chg < 0:
+                verdict   = "📉 Selling Pressure"
+                detail    = "Volume slightly above avg with price fall. Watch for continuation."
+                color     = "#f472b6"
+                icon      = "🟣"
+            else:
+                verdict   = "😴 Consolidation"
+                detail    = "Low volume, small price move. Market is waiting — no clear direction."
+                color     = "#64748b"
+                icon      = "⚪"
+
+            # 5. Volume trend over last 5 candles
+            vol_series = last5["volume"].tolist()
+            if len(vol_series) >= 3:
+                if vol_series[-1] > vol_series[-2] > vol_series[-3]:
+                    vol_trend = "📶 Vol Increasing"
+                elif vol_series[-1] < vol_series[-2] < vol_series[-3]:
+                    vol_trend = "📉 Vol Decreasing"
+                else:
+                    vol_trend = "〰️ Vol Mixed"
+            else:
+                vol_trend = ""
+
+            return verdict, detail, color, icon, vol_trend, round(vol_ratio * 100)
+
+        move_verdict, move_detail, move_color, move_icon, vol_trend, vol_ratio_pct = analyse_move(
+            data, vol_cur, vol_month
+        )
         rsi_color = "#ef5350" if not pd.isna(rsi_val) and rsi_val > 70 else ("#26a69a" if not pd.isna(rsi_val) and rsi_val < 30 else "#e2e8f0")
         rsi_label = "Overbought" if not pd.isna(rsi_val) and rsi_val > 70 else ("Oversold" if not pd.isna(rsi_val) and rsi_val < 30 else "Neutral")
 
@@ -673,9 +750,17 @@ else:
         <style>
         .mvg-row {{
             display: grid;
-            grid-template-columns: repeat(6, 1fr);
+            grid-template-columns: repeat(7, 1fr);
             gap: 10px;
             margin: 10px 0 14px;
+        }}
+        /* Tablet: 4 columns */
+        @media (max-width: 1024px) {{
+            .mvg-row {{ grid-template-columns: repeat(4, 1fr); }}
+        }}
+        /* Mobile: 2 columns */
+        @media (max-width: 640px) {{
+            .mvg-row {{ grid-template-columns: repeat(2, 1fr); gap: 8px; }}
         }}
         .mvg-card {{
             background: #0d1526;
@@ -683,23 +768,29 @@ else:
             border-radius: 10px;
             padding: 12px 14px;
             min-width: 0;
+            box-sizing: border-box;
         }}
         .mvg-label {{
             font-size: 11px;
             color: #64748b;
             letter-spacing: 0.04em;
             margin-bottom: 5px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }}
         .mvg-value {{
-            font-size: 1.05rem;
+            font-size: clamp(0.85rem, 2vw, 1.05rem);
             font-weight: 700;
             color: #e2e8f0;
-            word-break: break-all;
+            word-break: break-word;
+            line-height: 1.3;
         }}
         .mvg-sub {{
-            font-size: 11px;
+            font-size: clamp(10px, 1.5vw, 11px);
             margin-top: 4px;
             color: #64748b;
+            line-height: 1.5;
         }}
         </style>
         <div class="mvg-row">
@@ -733,6 +824,15 @@ else:
             <div class="mvg-value">{vol_display}</div>
             <div class="mvg-sub" style="line-height:1.7;">{vol_unit}<br>{week_str}<br>{month_str}</div>
           </div>
+          <div class="mvg-card" style="border-color:{move_color};background:linear-gradient(145deg,#0d1526,#0a1020);">
+            <div class="mvg-label">🏦 Move Analysis</div>
+            <div class="mvg-value" style="font-size:0.82rem;color:{move_color};line-height:1.4;">{move_icon} {move_verdict}</div>
+            <div class="mvg-sub" style="line-height:1.6;margin-top:5px;">{vol_trend}<br>Vol vs Avg: {vol_ratio_pct}%</div>
+          </div>
+        </div>
+        <div style="font-size:0.78rem;color:#64748b;background:rgba(13,21,38,0.6);
+                    border:1px solid #1e3a5f;border-radius:8px;padding:8px 14px;margin-bottom:8px;">
+            💡 <b style="color:{move_color};">{move_verdict}</b> — {move_detail}
         </div>
         """, unsafe_allow_html=True)
 
